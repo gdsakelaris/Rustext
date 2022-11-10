@@ -1,3 +1,1 @@
 # Rust-Text-Editor
-
-...
