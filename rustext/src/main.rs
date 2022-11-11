@@ -1,6 +1,6 @@
 use crossterm::event::{Event, KeyCode, KeyEvent}; //::*;
 use crossterm::terminal::ClearType;
-use crossterm::{event, execute, terminal};
+use crossterm::{cursor, event, execute, terminal};
 use std::time::Duration;
 // obtains user input
 use std::io;
@@ -34,7 +34,10 @@ impl Output {
         // <esc>[0J: clear the screen from the cursor to the end of the screen
         // 0 is the default argument for J
         // <esc>[J: ALSO clear the screen from the cursor to the end
-        execute!(stdout(), terminal::Clear(ClearType::All))
+        execute!(stdout(), terminal::Clear(ClearType::All))?;
+        // Position cursor to top left of window:
+        execute!(stdout(), cursor::MoveTo(0, 0))
+        // execute!(stdout(), terminal::Clear(ClearType::All))
     }
 
     fn refresh_screen(&self) -> crossterm::Result<()> {
