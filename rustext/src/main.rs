@@ -1,26 +1,75 @@
-use crossterm::event::{Event, KeyCode, KeyEvent}; //::*;
+use crossterm::event::*;
 use crossterm::terminal::ClearType;
-use crossterm::{cursor, event, execute, terminal};
+use crossterm::{cursor, event, execute, queue, terminal};
 use std::time::Duration;
 // obtains user input
-use std::io;
+// use std::io;
 use std::io::stdout;
-use std::io::Read;
+use std::io::{self, Write};
+// use std::io::Read;
 
 struct RawFix;
 
 impl Drop for RawFix {
     fn drop(&mut self) {
-        terminal::disable_raw_mode().expect("Could not disable raw mode")
+        terminal::disable_raw_mode().expect("Could not disable raw mode");
+        // function to clear the screen when our program exits either successfully or not
+        Output::clear_screen().expect("Error");
+    }
+}
+// Cursor Controller (stores cursor position)
+struct CursorController {
+    cursor_x: usize,
+    cursor_y: usize,
+}
+impl CursorController {
+    fn new() -> CursorController {
+        Self {
+            cursor_x: 4,
+            cursor_y: 1,
+        }
+    }
+    fn move_cursor(&mut self, direction: char) {
+        match direction {
+            'w' => {
+                self.cursor_y -= 1;
+            }
+            'a' => {
+                self.cursor_x -= 1;
+            }
+            's' => {
+                self.cursor_y += 1;
+            }
+            'd' => {
+                self.cursor_x += 1;
+            }
+            _ => unimplemented!(),
+        }
     }
 }
 
-// Struct for handling text output:
-struct Output;
+// OUTPUT
+// Struct for handling text output
+struct Output {
+    window_size: (usize, usize),
+    editor_contents: EditorContents,
+    cursor_controller: CursorController,
+}
 
 impl Output {
     fn new() -> Self {
-        Self
+        // window_size = size of terminal window
+        let window_size = terminal::size()
+            .map(|(x, y)| (x as usize, y as usize))
+            .unwrap();
+        Self {
+            window_size,
+            editor_contents: EditorContents::new(),
+            cursor_controller: CursorController::new(),
+        }
+    }
+    fn move_cursor(&mut self, direction: char) {
+        self.cursor_controller.move_cursor(direction);
     }
     // clear_screen:
     fn clear_screen() -> crossterm::Result<()> {
@@ -37,11 +86,130 @@ impl Output {
         execute!(stdout(), terminal::Clear(ClearType::All))?;
         // Position cursor to top left of window:
         execute!(stdout(), cursor::MoveTo(0, 0))
-        // execute!(stdout(), terminal::Clear(ClearType::All))
     }
 
-    fn refresh_screen(&self) -> crossterm::Result<()> {
-        Self::clear_screen()
+    // DRAW LINES () #r
+    // Adds line numbers to the beginning of each line (up to 25)
+    fn draw_lines(&mut self) {
+        // let r: u8;
+        let screen_lines = self.window_size.1;
+        let screen_columns = self.window_size.0;
+        for r in 1..screen_lines + 1 {
+            // for r in 1..screen_lines + 1 {
+            let mut i = r - 1;
+            let mut istr = format!("{}", i);
+            if r == 1 {
+                // if r == screen_lines / 3 {
+                // let mut welcome = format!("Rustext - Version {}", VERSION);
+                let mut welcome = format!("Rustext - Version 363");
+                if welcome.len() > screen_columns {
+                    welcome.truncate(screen_columns);
+                }
+                let mut padding = (screen_columns - welcome.len()) / 2;
+                if padding != 0 {
+                    // self.editor_contents.push('~');
+                    // let mut i = r;
+                    // let mut istr = format!("{}", i);
+                    if i != 0 {
+                        self.editor_contents.push_str(&istr);
+                    }
+                    padding -= 1
+                }
+                (0..padding).for_each(|_| self.editor_contents.push(' '));
+                // (1..padding).for_each(|_| self.editor_contents.push(' '));
+                // self.editor_contents.push_str("\r\n");
+                self.editor_contents.push_str(&welcome);
+            } else {
+                // print!("{i}");
+                // self.editor_contents.push('~');
+                // let mut i = r;
+                // let mut istr = format!("{}", i);
+                if i != 0 {
+                    self.editor_contents.push_str(&istr);
+                }
+                // let mut i = r;
+                // let mut istr = format!("{}", i);
+            }
+            // // print!("{i}");
+            // let mut i = r;
+            // let mut istr = format!("{}", i);
+            // // ERROR FROM NOT USING PUSH()???
+            // self.editor_contents.push_str(&istr);
+            queue!(
+                self.editor_contents,
+                terminal::Clear(ClearType::UntilNewLine)
+            )
+            .unwrap();
+            // exception for last line in window:
+            if r < screen_lines {
+                // println!("\r")
+                self.editor_contents.push_str("\r\n");
+            }
+            // stdout().flush();
+        }
+    }
+
+    // REFRESH SCREEN ()
+    fn refresh_screen(&mut self) -> crossterm::Result<()> {
+        queue!(
+            self.editor_contents,
+            cursor::Hide,
+            // terminal::Clear(ClearType::All),
+            cursor::MoveTo(0, 0)
+        )?;
+        // Self::clear_screen()?;
+        self.draw_lines();
+        let cursor_x = self.cursor_controller.cursor_x;
+        let cursor_y = self.cursor_controller.cursor_y;
+        queue!(
+            self.editor_contents,
+            cursor::MoveTo(cursor_x as u16, cursor_y as u16),
+            cursor::Show
+        )?;
+        self.editor_contents.flush()
+        // execute!(stdout(), cursor::MoveTo(0, 0))
+    }
+}
+
+// STRUCT: EditorContents
+// Output is written to this struct instead of to stdout
+struct EditorContents {
+    content: String,
+}
+impl EditorContents {
+    fn new() -> Self {
+        Self {
+            content: String::new(),
+        }
+    }
+    //ERROR HERE
+    fn push(&mut self, ch: char) {
+        self.content.push(ch)
+    }
+
+    fn push_str(&mut self, string: &str) {
+        self.content.push_str(string)
+    }
+}
+// Implementation of std::io::Write for EditorContent:
+impl io::Write for EditorContents {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // convert the bytes passed into the write function to str so they can be added to the content
+        match std::str::from_utf8(buf) {
+            // return the length of the string if the bytes can be converted to str
+            Ok(s) => {
+                self.content.push_str(s);
+                Ok(s.len())
+            }
+            // return error otherwise
+            Err(_) => Err(io::ErrorKind::WriteZero.into()),
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        let out = write!(stdout(), "{}", self.content);
+        stdout().flush()?;
+        self.content.clear();
+        out
     }
 }
 
@@ -74,18 +242,22 @@ impl RustextEditor {
         }
     }
     // Processes the events returned by KeypressReader:
-    fn process_keypress(&self) -> crossterm::Result<bool> {
+    fn process_keypress(&mut self) -> crossterm::Result<bool> {
         match self.reader.read_key()? {
             KeyEvent {
                 code: KeyCode::Char('q'),
                 modifiers: event::KeyModifiers::CONTROL,
             } => return Ok(false),
+            KeyEvent {
+                code: KeyCode::Char(val @ ('w' | 'a' | 's' | 'd')),
+                modifiers: KeyModifiers::NONE,
+            } => self.output.move_cursor(val),
             _ => {}
         }
         Ok(true)
     }
     // run function:
-    fn run(&self) -> crossterm::Result<bool> {
+    fn run(&mut self) -> crossterm::Result<bool> {
         self.output.refresh_screen()?;
         self.process_keypress()
     }
@@ -94,7 +266,7 @@ impl RustextEditor {
 fn main() -> crossterm::Result<()> {
     let _raw_fix = RawFix;
     terminal::enable_raw_mode()?;
-    let editor = RustextEditor::new();
+    let mut editor = RustextEditor::new();
     while editor.run()? {}
     Ok(())
 }
