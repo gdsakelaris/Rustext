@@ -1,3 +1,5 @@
 # Rust-Text-Editor
 
-## Daniel Sakelaris
+## Rustext
+
+### By Daniel Sakelaris

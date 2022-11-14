@@ -1,12 +1,9 @@
 use crossterm::event::*;
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, event, execute, queue, terminal};
-use std::time::Duration;
-// obtains user input
-// use std::io;
 use std::io::stdout;
 use std::io::{self, Write};
-// use std::io::Read;
+use std::time::Duration;
 
 struct RawFix;
 
@@ -23,18 +20,8 @@ struct CursorController {
     cursor_y: usize,
     screen_columns: usize,
     screen_lines: usize,
-    // screen_columns: window_size.0,
-    // screen_lines: window_size.1,
 }
 impl CursorController {
-    //
-    // fn new() -> CursorController {
-    //     Self {
-    //         cursor_x: 4,
-    //         cursor_y: 1,
-    //     }
-    // }
-    //
     fn new(window_size: (usize, usize)) -> CursorController {
         Self {
             cursor_x: 4,
@@ -45,23 +32,6 @@ impl CursorController {
     }
 
     fn move_cursor(&mut self, direction: KeyCode) {
-        //
-        // match direction {
-        //     KeyCode::Up => {
-        //         self.cursor_y -= 1;
-        //     }
-        //     KeyCode::Left => {
-        //         self.cursor_x -= 1;
-        //     }
-        //     KeyCode::Down => {
-        //         self.cursor_y += 1;
-        //     }
-        //     KeyCode::Right => {
-        //         self.cursor_x += 1;
-        //     }
-        //     _ => unimplemented!(),
-        // }
-        //
         match direction {
             KeyCode::Up => {
                 self.cursor_y = self.cursor_y.saturating_sub(1);
@@ -133,52 +103,32 @@ impl Output {
     }
 
     // DRAW LINES () #r
-    // Adds line numbers to the beginning of each line (up to 25)
+    // Adds line numbers to the beginning of each line
     fn draw_lines(&mut self) {
-        // let r: u8;
         let screen_lines = self.window_size.1;
         let screen_columns = self.window_size.0;
         for r in 1..screen_lines + 1 {
-            // for r in 1..screen_lines + 1 {
             let mut i = r - 1;
             let mut istr = format!("{}", i);
             if r == 1 {
-                // if r == screen_lines / 3 {
-                // let mut welcome = format!("Rustext - Version {}", VERSION);
                 let mut welcome = format!("Rustext - Version 363");
                 if welcome.len() > screen_columns {
                     welcome.truncate(screen_columns);
                 }
                 let mut padding = (screen_columns - welcome.len()) / 2;
                 if padding != 0 {
-                    // self.editor_contents.push('~');
-                    // let mut i = r;
-                    // let mut istr = format!("{}", i);
                     if i != 0 {
                         self.editor_contents.push_str(&istr);
                     }
                     padding -= 1
                 }
                 (0..padding).for_each(|_| self.editor_contents.push(' '));
-                // (1..padding).for_each(|_| self.editor_contents.push(' '));
-                // self.editor_contents.push_str("\r\n");
                 self.editor_contents.push_str(&welcome);
             } else {
-                // print!("{i}");
-                // self.editor_contents.push('~');
-                // let mut i = r;
-                // let mut istr = format!("{}", i);
                 if i != 0 {
                     self.editor_contents.push_str(&istr);
                 }
-                // let mut i = r;
-                // let mut istr = format!("{}", i);
             }
-            // // print!("{i}");
-            // let mut i = r;
-            // let mut istr = format!("{}", i);
-            // // ERROR FROM NOT USING PUSH()???
-            // self.editor_contents.push_str(&istr);
             queue!(
                 self.editor_contents,
                 terminal::Clear(ClearType::UntilNewLine)
@@ -186,22 +136,14 @@ impl Output {
             .unwrap();
             // exception for last line in window:
             if r < screen_lines {
-                // println!("\r")
                 self.editor_contents.push_str("\r\n");
             }
-            // stdout().flush();
         }
     }
 
     // REFRESH SCREEN ()
     fn refresh_screen(&mut self) -> crossterm::Result<()> {
-        queue!(
-            self.editor_contents,
-            cursor::Hide,
-            // terminal::Clear(ClearType::All),
-            cursor::MoveTo(0, 0)
-        )?;
-        // Self::clear_screen()?;
+        queue!(self.editor_contents, cursor::Hide, cursor::MoveTo(0, 0))?;
         self.draw_lines();
         let cursor_x = self.cursor_controller.cursor_x;
         let cursor_y = self.cursor_controller.cursor_y;
@@ -211,7 +153,6 @@ impl Output {
             cursor::Show
         )?;
         self.editor_contents.flush()
-        // execute!(stdout(), cursor::MoveTo(0, 0))
     }
 }
 
@@ -226,7 +167,7 @@ impl EditorContents {
             content: String::new(),
         }
     }
-    //ERROR HERE
+    // POTENTIAL ERROR HERE
     fn push(&mut self, ch: char) {
         self.content.push(ch)
     }
@@ -261,7 +202,6 @@ impl io::Write for EditorContents {
 struct KeypressReader;
 // Method that reads key events:
 impl KeypressReader {
-    // read_key function:
     fn read_key(&self) -> crossterm::Result<KeyEvent> {
         loop {
             if event::poll(Duration::from_millis(500))? {
@@ -272,6 +212,7 @@ impl KeypressReader {
         }
     }
 }
+
 // Main stuct that runs program:
 struct RustextEditor {
     reader: KeypressReader,
@@ -293,7 +234,6 @@ impl RustextEditor {
                 modifiers: event::KeyModifiers::CONTROL,
             } => return Ok(false),
             KeyEvent {
-                // code: KeyCode::Char(val @ ('w' | 'a' | 's' | 'd')),
                 code:
                     direction @ (KeyCode::Up
                     | KeyCode::Down
@@ -331,36 +271,3 @@ fn main() -> crossterm::Result<()> {
     while editor.run()? {}
     Ok(())
 }
-// loop {
-//     if event::poll(Duration::from_millis(1000))? {
-//         if let Event::Key(event) = event::read()? {
-//             match event {
-//                 KeyEvent {
-//                     code: KeyCode::Char('q'),
-//                     modifiers: event::KeyModifiers::CONTROL,
-//                 } => break,
-//                 _ => {
-//                     //todo
-//                 }
-//             }
-//             println!("{:?}\r", event);
-//         };
-//     } else {
-//         println!("No input received\r");
-//     }
-// }
-// // read 1 byte at a time
-// let mut buf = [0; 1];
-// while io::stdin().read(&mut buf).expect("Could not read line") == 1 && buf != [b'q'] {
-//     let character = buf[0] as char;
-//     // tests whether a character is a control character
-//     if character.is_control() {
-//         println!("{}\r", character as u8)
-//         // println!("{}", character as u8)
-//     } else {
-//         println!("{}\r", character)
-//         // println!("{}", character)
-//     }
-// }
-// // panic!();
-// // terminal::disable_raw_mode().expect("Could not turn off raw mode");
