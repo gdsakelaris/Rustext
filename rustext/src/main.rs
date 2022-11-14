@@ -29,18 +29,18 @@ impl CursorController {
             cursor_y: 1,
         }
     }
-    fn move_cursor(&mut self, direction: char) {
+    fn move_cursor(&mut self, direction: KeyCode) {
         match direction {
-            'w' => {
+            KeyCode::Up => {
                 self.cursor_y -= 1;
             }
-            'a' => {
+            KeyCode::Left => {
                 self.cursor_x -= 1;
             }
-            's' => {
+            KeyCode::Down => {
                 self.cursor_y += 1;
             }
-            'd' => {
+            KeyCode::Right => {
                 self.cursor_x += 1;
             }
             _ => unimplemented!(),
@@ -68,7 +68,7 @@ impl Output {
             cursor_controller: CursorController::new(),
         }
     }
-    fn move_cursor(&mut self, direction: char) {
+    fn move_cursor(&mut self, direction: KeyCode) {
         self.cursor_controller.move_cursor(direction);
     }
     // clear_screen:
@@ -249,9 +249,10 @@ impl RustextEditor {
                 modifiers: event::KeyModifiers::CONTROL,
             } => return Ok(false),
             KeyEvent {
-                code: KeyCode::Char(val @ ('w' | 'a' | 's' | 'd')),
+                // code: KeyCode::Char(val @ ('w' | 'a' | 's' | 'd')),
+                code: direction @ (KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right),
                 modifiers: KeyModifiers::NONE,
-            } => self.output.move_cursor(val),
+            } => self.output.move_cursor(direction),
             _ => {}
         }
         Ok(true)
