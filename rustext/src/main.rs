@@ -3,7 +3,9 @@ use crossterm::terminal::ClearType;
 use crossterm::{cursor, event, execute, queue, terminal};
 use std::io::stdout;
 use std::io::{self, Write};
+use std::path::Path;
 use std::time::Duration;
+use std::{cmp, env, fs};
 
 struct RawFix;
 
@@ -14,6 +16,40 @@ impl Drop for RawFix {
         Output::clear_screen().expect("Error");
     }
 }
+///////////////////////////////////
+struct EditorRows {
+    row_contents: Vec<Box<str>>,
+}
+
+impl EditorRows {
+    fn new() -> Self {
+        let mut arg = env::args();
+
+        match arg.nth(1) {
+            None => Self {
+                row_contents: Vec::new(),
+            },
+            Some(file) => Self::from_file(file.as_ref()),
+        }
+    }
+
+    fn from_file(file: &Path) -> Self {
+        let file_contents = fs::read_to_string(file).expect("Cannot read file");
+        Self {
+            row_contents: file_contents.lines().map(|it| it.into()).collect(),
+        }
+    }
+
+    fn number_of_rows(&self) -> usize {
+        self.row_contents.len()
+    }
+
+    fn get_row(&self, at: usize) -> &str {
+        &self.row_contents[at]
+    }
+}
+///////////////////////////////////
+
 // Cursor Controller (stores cursor position)
 struct CursorController {
     cursor_x: usize,
@@ -65,6 +101,7 @@ struct Output {
     window_size: (usize, usize),
     editor_contents: EditorContents,
     cursor_controller: CursorController,
+    editor_rows: EditorRows,
 }
 
 impl Output {
@@ -80,6 +117,7 @@ impl Output {
             // cursor_controller: CursorController::new(),
             //
             cursor_controller: CursorController::new(window_size),
+            editor_rows: EditorRows::new(),
         }
     }
     fn move_cursor(&mut self, direction: KeyCode) {
@@ -110,25 +148,35 @@ impl Output {
         for r in 1..screen_lines + 1 {
             let mut i = r - 1;
             let mut istr = format!("{}", i);
-            if r == 1 {
-                let mut welcome = format!("Rustext - Version 363");
-                if welcome.len() > screen_columns {
-                    welcome.truncate(screen_columns);
-                }
-                let mut padding = (screen_columns - welcome.len()) / 2;
-                if padding != 0 {
+            ///////////////////////////////////////////////
+            if i >= self.editor_rows.number_of_rows() {
+                //////    ///////////////////////////////////////////////
+                if self.editor_rows.number_of_rows() == 0 && i == 1 {
+                    let mut welcome = format!("Rustext - Version 363");
+                    if welcome.len() > screen_columns {
+                        welcome.truncate(screen_columns);
+                    }
+                    let mut padding = (screen_columns - welcome.len()) / 2;
+                    if padding != 0 {
+                        if i != 0 {
+                            self.editor_contents.push_str(&istr);
+                        }
+                        padding -= 1
+                    }
+                    (0..padding).for_each(|_| self.editor_contents.push(' '));
+                    self.editor_contents.push_str(&welcome);
+                } else {
                     if i != 0 {
                         self.editor_contents.push_str(&istr);
                     }
-                    padding -= 1
                 }
-                (0..padding).for_each(|_| self.editor_contents.push(' '));
-                self.editor_contents.push_str(&welcome);
+            /////////////////////////////////////////////////////////
             } else {
-                if i != 0 {
-                    self.editor_contents.push_str(&istr);
-                }
+                let len = cmp::min(self.editor_rows.get_row(i).len(), screen_columns);
+                self.editor_contents
+                    .push_str(&self.editor_rows.get_row(i)[..len])
             }
+            /////////////////////////////////////////////////////////
             queue!(
                 self.editor_contents,
                 terminal::Clear(ClearType::UntilNewLine)
