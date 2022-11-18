@@ -186,8 +186,13 @@ impl CursorController {
                     }
                 }
             }
-            KeyCode::End => self.cursor_x = self.screen_columns - 1,
-            KeyCode::Home => self.cursor_x = 4,
+            KeyCode::End => {
+                if self.cursor_y < number_of_rows {
+                    self.cursor_x = editor_rows.get_row(self.cursor_y).len();
+                }
+            }
+            // self.cursor_x = self.screen_columns - 1,
+            KeyCode::Home => self.cursor_x = 0,
             _ => unimplemented!(),
         }
         let row_len = if self.cursor_y < number_of_rows {
@@ -392,13 +397,25 @@ impl RustextEditor {
             KeyEvent {
                 code: val @ (KeyCode::PageUp | KeyCode::PageDown),
                 modifiers: KeyModifiers::NONE,
-            } => (2..self.output.window_size.1).for_each(|_| {
-                self.output.move_cursor(if matches!(val, KeyCode::PageUp) {
-                    KeyCode::Up
+            } => {
+                if matches!(val, KeyCode::PageUp) {
+                    self.output.cursor_controller.cursor_y =
+                        self.output.cursor_controller.row_offset
                 } else {
-                    KeyCode::Down
-                });
-            }),
+                    self.output.cursor_controller.cursor_y = cmp::min(
+                        self.output.window_size.1 + self.output.cursor_controller.row_offset - 1,
+                        self.output.editor_rows.number_of_rows(),
+                    );
+                }
+                (2..self.output.window_size.1).for_each(|_| {
+                    self.output.move_cursor(if matches!(val, KeyCode::PageUp) {
+                        KeyCode::Up
+                    } else {
+                        KeyCode::Down
+                    });
+                    // }),
+                })
+            }
             _ => {}
         }
         Ok(true)
