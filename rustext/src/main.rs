@@ -14,22 +14,29 @@ struct RawFix;
 impl Drop for RawFix {
     fn drop(&mut self) {
         terminal::disable_raw_mode().expect("Could not disable raw mode");
-        // function to clear the screen when our program exits either successfully or not
+        // function to clear the screen when our program exits, either successfully or not
         Output::clear_screen().expect("Error");
     }
 }
 
+#[derive(Default)] // implements default method for Row struct
 struct Row {
-    row_content: Box<str>,
+    row_content: String,
     render: String,
 }
 
 impl Row {
-    fn new(row_content: Box<str>, render: String) -> Self {
+    fn new(row_content: String, render: String) -> Self {
         Self {
             row_content,
             render,
         }
+    }
+
+    // Inserts a character into the line at a given position
+    fn insert_char(&mut self, at: usize, ch: char) {
+        self.row_content.insert(at, ch);
+        EditorRows::render_row(self)
     }
 }
 
@@ -80,6 +87,16 @@ impl EditorRows {
     // fn get_row(&self, at: usize) -> &Row {
     //     &self.row_contents[at]
     // }
+
+    // function which adds a new empty row to the file where characters can be inserted
+    fn insert_row(&mut self) {
+        self.row_contents.push(Row::default());
+    }
+
+    // returns a mutable reference to Row
+    fn get_editor_row_mut(&mut self, at: usize) -> &mut Row {
+        &mut self.row_contents[at]
+    }
 
     fn render_row(row: &mut Row) {
         let mut index = 0;
@@ -234,6 +251,17 @@ impl Output {
         execute!(stdout(), terminal::Clear(ClearType::All))?;
         // Position cursor to top left of window:
         execute!(stdout(), cursor::MoveTo(0, 0))
+    }
+
+    // 1.
+    fn insert_char(&mut self, ch: char) {
+        if self.cursor_controller.cursor_y == self.editor_rows.number_of_rows() {
+            self.editor_rows.insert_row()
+        }
+        self.editor_rows
+            .get_editor_row_mut(self.cursor_controller.cursor_y)
+            .insert_char(self.cursor_controller.cursor_x, ch);
+        self.cursor_controller.cursor_x += 1;
     }
 
     // DRAW LINES () #r
@@ -416,6 +444,15 @@ impl RustextEditor {
                     // }),
                 })
             }
+            // 1.
+            KeyEvent {
+                code: code @ (KeyCode::Char(..) | KeyCode::Tab),
+                modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+            } => self.output.insert_char(match code {
+                KeyCode::Tab => '\t',
+                KeyCode::Char(ch) => ch,
+                _ => unreachable!(),
+            }),
             _ => {}
         }
         Ok(true)
