@@ -3,8 +3,9 @@ use crossterm::terminal::ClearType;
 use crossterm::{cursor, event, execute, queue, terminal};
 use std::cmp::Ordering;
 use std::io::stdout;
-use std::io::{self, Write};
+use std::io::{self, ErrorKind, Write};
 use std::path::Path;
+use std::path::PathBuf;
 use std::time::Duration;
 use std::{cmp, env, fs};
 
@@ -38,10 +39,18 @@ impl Row {
         self.row_content.insert(at, ch);
         EditorRows::render_row(self)
     }
+
+    // Deletes a character in row_content
+    fn delete_char(&mut self, at: usize) {
+        self.row_content.remove(at);
+        EditorRows::render_row(self)
+    }
 }
 
 struct EditorRows {
     row_contents: Vec<Row>,
+    // bb
+    filename: Option<PathBuf>,
 }
 impl EditorRows {
     fn new() -> Self {
@@ -50,22 +59,51 @@ impl EditorRows {
         match arg.nth(1) {
             None => Self {
                 row_contents: Vec::new(),
+                // bb
+                filename: None,
             },
-            Some(file) => Self::from_file(file.as_ref()),
+            // Some(file) => Self::from_file(file.as_ref()),
+            // bb ^
+            Some(file) => Self::from_file(file.into()),
+            //, syntax_highlight),
         }
     }
 
-    fn from_file(file: &Path) -> Self {
-        let file_contents = fs::read_to_string(file).expect("Cannot read file");
+    // // fn from_file(file: &Path) -> Self {
+    // fn from_file(file: PathBuf) -> Self {
+    //     let file_contents = fs::read_to_string(file).expect("Cannot read file");
+    //     Self {
+    //         filename: Some(file.to_path_buf()),
+    //         // bb ^
+    //         row_contents: file_contents
+    //             .lines()
+    //             .map(|it| {
+    //                 let mut row = Row::new(it.into(), String::new());
+    //                 Self::render_row(&mut row);
+    //                 row
+    //             })
+    //             .collect(),
+    //     }
+    // }
+    // bb ^
+    fn from_file(file: PathBuf) -> Self {
+        // , syntax_highlight: &mut Option<Box<dyn SyntaxHighlight>> ^2nd param here
+        let file_contents = fs::read_to_string(&file).expect("Unable to read file");
+        let mut row_contents = Vec::new();
+        // file.extension()
+        //     .and_then(|ext| ext.to_str())
+        //     .map(|ext| Output::select_syntax(ext).map(|syntax| syntax_highlight.insert(syntax)));
+        file_contents.lines().enumerate().for_each(|(i, line)| {
+            let mut row = Row::new(line.into(), String::new());
+            Self::render_row(&mut row);
+            row_contents.push(row);
+            // if let Some(it) = syntax_highlight {
+            //     it.update_syntax(i, &mut row_contents)
+            // }
+        });
         Self {
-            row_contents: file_contents
-                .lines()
-                .map(|it| {
-                    let mut row = Row::new(it.into(), String::new());
-                    Self::render_row(&mut row);
-                    row
-                })
-                .collect(),
+            filename: Some(file),
+            row_contents,
         }
     }
 
@@ -88,10 +126,23 @@ impl EditorRows {
     //     &self.row_contents[at]
     // }
 
-    // function which adds a new empty row to the file where characters can be inserted
-    fn insert_row(&mut self) {
-        self.row_contents.push(Row::default());
+    // if user presses Backspace at the beginning of a line, append contents of current line to the end of the previous line and delete the current line
+    fn join_adjacent_rows(&mut self, at: usize) {
+        let current_row = self.row_contents.remove(at);
+        let previous_row = self.get_editor_row_mut(at - 1);
+        previous_row.row_content.push_str(&current_row.row_content);
+        Self::render_row(previous_row);
     }
+
+    // function which adds a new empty row to the file where characters can be inserted
+    fn insert_row(&mut self, at: usize, contents: String) {
+        let mut new_row = Row::new(contents, String::new());
+        EditorRows::render_row(&mut new_row);
+        self.row_contents.insert(at, new_row);
+    }
+    // fn insert_row(&mut self) {
+    //     self.row_contents.push(Row::default());
+    // }
 
     // returns a mutable reference to Row
     fn get_editor_row_mut(&mut self, at: usize) -> &mut Row {
@@ -117,6 +168,25 @@ impl EditorRows {
                 row.render.push(c);
             }
         });
+    }
+
+    // Handles file-saving
+    fn save(&self) -> io::Result<()> {
+        match &self.filename {
+            None => Err(io::Error::new(ErrorKind::Other, "no file name specified")),
+            // convert row_contents from Vec to string
+            Some(name) => {
+                let mut file = fs::OpenOptions::new().write(true).create(true).open(name)?;
+                let contents: String = self
+                    .row_contents
+                    .iter()
+                    .map(|it| it.row_content.as_str())
+                    .collect::<Vec<&str>>()
+                    .join("\n");
+                file.set_len(contents.len() as u64)?;
+                file.write_all(contents.as_bytes())
+            }
+        }
     }
 }
 
@@ -256,12 +326,61 @@ impl Output {
     // 1.
     fn insert_char(&mut self, ch: char) {
         if self.cursor_controller.cursor_y == self.editor_rows.number_of_rows() {
-            self.editor_rows.insert_row()
+            self.editor_rows
+                .insert_row(self.editor_rows.number_of_rows(), String::new());
         }
         self.editor_rows
             .get_editor_row_mut(self.cursor_controller.cursor_y)
             .insert_char(self.cursor_controller.cursor_x, ch);
         self.cursor_controller.cursor_x += 1;
+    }
+
+    // Performs various checks based on function of the same name implemented by Row struct
+    fn delete_char(&mut self) {
+        // if cursor is past EOF, there is nothing to delete, so returns immediately
+        if self.cursor_controller.cursor_y == self.editor_rows.number_of_rows() {
+            return;
+        }
+        // otherwise, find the line the cursor is on
+        let row = self
+            .editor_rows
+            .get_editor_row_mut(self.cursor_controller.cursor_y);
+        // if there is a character to the left of the cursor, it gets deleted and cursor moves one space to the left
+        if self.cursor_controller.cursor_x > 0 {
+            row.delete_char(self.cursor_controller.cursor_x - 1);
+            self.cursor_controller.cursor_x -= 1;
+        } else {
+            let previous_row_content = self
+                .editor_rows
+                .get_row(self.cursor_controller.cursor_y - 1);
+            self.cursor_controller.cursor_x = previous_row_content.len();
+            self.editor_rows
+                .join_adjacent_rows(self.cursor_controller.cursor_y);
+            self.cursor_controller.cursor_y -= 1;
+        }
+        // self.dirty += 1;
+    }
+
+    // 1... (mapped to "Enter" key)
+    fn insert_newline(&mut self) {
+        if self.cursor_controller.cursor_x == 0 {
+            self.editor_rows
+                .insert_row(self.cursor_controller.cursor_y, String::new())
+        } else {
+            let current_row = self
+                .editor_rows
+                .get_editor_row_mut(self.cursor_controller.cursor_y);
+            let new_row_content = current_row.row_content[self.cursor_controller.cursor_x..].into();
+            current_row
+                .row_content
+                .truncate(self.cursor_controller.cursor_x);
+            EditorRows::render_row(current_row);
+            self.editor_rows
+                .insert_row(self.cursor_controller.cursor_y + 1, new_row_content);
+        }
+        self.cursor_controller.cursor_x = 0;
+        self.cursor_controller.cursor_y += 1;
+        // self.dirty += 1;
     }
 
     // DRAW LINES () #r
@@ -444,6 +563,26 @@ impl RustextEditor {
                     // }),
                 })
             }
+            // Use CTRL + S to save file
+            KeyEvent {
+                code: KeyCode::Char('s'),
+                modifiers: KeyModifiers::CONTROL,
+            } => self.output.editor_rows.save()?,
+            // maps "Backspace" and "Delete" keys to delete_char() function:
+            KeyEvent {
+                code: key @ (KeyCode::Backspace | KeyCode::Delete),
+                modifiers: KeyModifiers::NONE,
+            } => {
+                if matches!(key, KeyCode::Delete) {
+                    self.output.move_cursor(KeyCode::Right)
+                }
+                self.output.delete_char()
+            }
+            // Maps "Enter" key to insert_newline() function:
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::NONE,
+            } => self.output.insert_newline(),
             // 1.
             KeyEvent {
                 code: code @ (KeyCode::Char(..) | KeyCode::Tab),
