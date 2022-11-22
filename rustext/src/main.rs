@@ -1,12 +1,12 @@
 use crossterm::event::*;
 use crossterm::terminal::ClearType;
-use crossterm::{cursor, event, execute, queue, terminal};
+use crossterm::{cursor, event, execute, queue, style, terminal};
 use std::cmp::Ordering;
 use std::io::stdout;
 use std::io::{self, ErrorKind, Write};
 use std::path::Path;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{cmp, env, fs};
 
 const TAB_STOP: usize = 8;
@@ -20,7 +20,8 @@ impl Drop for RawFix {
     }
 }
 
-#[derive(Default)] // implements default method for Row struct
+// implements default method for Row struct
+#[derive(Default)]
 struct Row {
     row_content: String,
     render: String,
@@ -47,63 +48,114 @@ impl Row {
     }
 }
 
+#[macro_export]
+macro_rules! prompt {
+    ($output:expr,$($args:tt)*) => {{
+        let output:&mut Output = $output;
+        let mut input = String::with_capacity(32);
+        loop {
+            output.status_message.set_message(format!($($args)*, input));
+            output.refresh_screen()?;
+            match Reader.read_key()? {
+                KeyEvent {
+                    code:KeyCode::Enter,
+                    modifiers:KeyModifiers::NONE
+                } => {
+                    if !input.is_empty() {
+                        output.status_message.set_message(String::new());
+                        break;
+                    }
+                }
+                KeyEvent {
+                    code: KeyCode::Esc,
+                    ..
+                } => {
+                    output.status_message.set_message(String::new());
+                    input.clear();
+                    break;
+                }
+                /* add the following */
+                KeyEvent {
+                    code: KeyCode::Backspace | KeyCode::Delete,
+                    modifiers: KeyModifiers::NONE,
+                } =>  {
+                    input.pop();
+                }
+                /* end */
+                KeyEvent {
+                    code: code @ (KeyCode::Char(..) | KeyCode::Tab),
+                    modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+                } => input.push(match code {
+                        KeyCode::Tab => '\t',
+                        KeyCode::Char(ch) => ch,
+                        _ => unreachable!(),
+                    }),
+
+                _=> {}
+            }
+        }
+        if input.is_empty() { None } else { Some (input) }
+    }};
+}
+
+struct StatusMessage {
+    message: Option<String>,
+    set_time: Option<Instant>,
+}
+impl StatusMessage {
+    fn new(initial_message: String) -> Self {
+        Self {
+            message: Some(initial_message),
+            set_time: Some(Instant::now()),
+        }
+    }
+
+    fn set_message(&mut self, message: String) {
+        self.message = Some(message);
+        self.set_time = Some(Instant::now())
+    }
+
+    fn message(&mut self) -> Option<&String> {
+        self.set_time.and_then(|time| {
+            if time.elapsed() > Duration::from_secs(5) {
+                self.message = None;
+                self.set_time = None;
+                None
+            } else {
+                Some(self.message.as_ref().unwrap())
+            }
+        })
+    }
+}
+
 struct EditorRows {
     row_contents: Vec<Row>,
-    // bb
     filename: Option<PathBuf>,
 }
 impl EditorRows {
     fn new() -> Self {
-        let mut arg = env::args();
-
-        match arg.nth(1) {
+        match env::args().nth(1) {
             None => Self {
                 row_contents: Vec::new(),
-                // bb
                 filename: None,
             },
-            // Some(file) => Self::from_file(file.as_ref()),
-            // bb ^
             Some(file) => Self::from_file(file.into()),
-            //, syntax_highlight),
         }
     }
 
-    // // fn from_file(file: &Path) -> Self {
-    // fn from_file(file: PathBuf) -> Self {
-    //     let file_contents = fs::read_to_string(file).expect("Cannot read file");
-    //     Self {
-    //         filename: Some(file.to_path_buf()),
-    //         // bb ^
-    //         row_contents: file_contents
-    //             .lines()
-    //             .map(|it| {
-    //                 let mut row = Row::new(it.into(), String::new());
-    //                 Self::render_row(&mut row);
-    //                 row
-    //             })
-    //             .collect(),
-    //     }
-    // }
-    // bb ^
+    //
     fn from_file(file: PathBuf) -> Self {
-        // , syntax_highlight: &mut Option<Box<dyn SyntaxHighlight>> ^2nd param here
         let file_contents = fs::read_to_string(&file).expect("Unable to read file");
-        let mut row_contents = Vec::new();
-        // file.extension()
-        //     .and_then(|ext| ext.to_str())
-        //     .map(|ext| Output::select_syntax(ext).map(|syntax| syntax_highlight.insert(syntax)));
-        file_contents.lines().enumerate().for_each(|(i, line)| {
-            let mut row = Row::new(line.into(), String::new());
-            Self::render_row(&mut row);
-            row_contents.push(row);
-            // if let Some(it) = syntax_highlight {
-            //     it.update_syntax(i, &mut row_contents)
-            // }
-        });
         Self {
             filename: Some(file),
-            row_contents,
+            row_contents: file_contents
+                .lines()
+                .map(|it| {
+                    let mut row = Row::new(it.into(), String::new());
+                    Self::render_row(&mut row);
+                    row
+                })
+                .collect(),
         }
     }
 
@@ -203,12 +255,12 @@ struct CursorController {
 }
 // INITIALIZES CURSOR POSITION
 impl CursorController {
-    fn new(window_size: (usize, usize)) -> CursorController {
+    fn new(win_size: (usize, usize)) -> CursorController {
         Self {
             cursor_x: 0,
             cursor_y: 0,
-            screen_columns: window_size.0,
-            screen_lines: window_size.1,
+            screen_columns: win_size.0,
+            screen_lines: win_size.1,
             row_offset: 0,
             column_offset: 0,
             render_x: 0,
@@ -292,25 +344,23 @@ impl CursorController {
 }
 // Struct for handling text output
 struct Output {
-    window_size: (usize, usize),
+    win_size: (usize, usize),
     editor_contents: EditorContents,
     cursor_controller: CursorController,
     editor_rows: EditorRows,
+    status_message: StatusMessage,
 }
 impl Output {
     fn new() -> Self {
-        // window_size = size of terminal window
-        let window_size = terminal::size()
-            .map(|(x, y)| (x as usize, y as usize))
+        let win_size = terminal::size()
+            .map(|(x, y)| (x as usize, y as usize - 2))
             .unwrap();
         Self {
-            window_size,
+            win_size,
             editor_contents: EditorContents::new(),
-            //
-            // cursor_controller: CursorController::new(),
-            //
-            cursor_controller: CursorController::new(window_size),
+            cursor_controller: CursorController::new(win_size),
             editor_rows: EditorRows::new(),
+            status_message: StatusMessage::new("HELP: Ctrl-Q = Quit".into()),
         }
     }
     fn move_cursor(&mut self, direction: KeyCode) {
@@ -322,17 +372,49 @@ impl Output {
         // Position cursor to top left of window:
         execute!(stdout(), cursor::MoveTo(0, 0))
     }
-
-    // 1.
+    fn draw_status_bar(&mut self) {
+        self.editor_contents
+            .push_str(&style::Attribute::Reverse.to_string());
+        let info = format!(
+            "{} -- {} lines",
+            self.editor_rows
+                .filename
+                .as_ref()
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or("[No Name]"),
+            self.editor_rows.number_of_rows()
+        );
+        let info_len = cmp::min(info.len(), self.win_size.0);
+        let line_info = format!(
+            "{}/{}",
+            self.cursor_controller.cursor_y + 1,
+            self.editor_rows.number_of_rows()
+        );
+        self.editor_contents.push_str(&info[..info_len]);
+        for i in info_len..self.win_size.0 {
+            if self.win_size.0 - i == line_info.len() {
+                self.editor_contents.push_str(&line_info);
+                break;
+            } else {
+                self.editor_contents.push(' ')
+            }
+        }
+        self.editor_contents
+            .push_str(&style::Attribute::Reset.to_string());
+        self.editor_contents.push_str("\r\n");
+    }
     fn insert_char(&mut self, ch: char) {
         if self.cursor_controller.cursor_y == self.editor_rows.number_of_rows() {
             self.editor_rows
                 .insert_row(self.editor_rows.number_of_rows(), String::new());
+            // self.dirty += 1;
         }
         self.editor_rows
             .get_editor_row_mut(self.cursor_controller.cursor_y)
             .insert_char(self.cursor_controller.cursor_x, ch);
         self.cursor_controller.cursor_x += 1;
+        // self.dirty += 1;
     }
 
     // Performs various checks based on function of the same name implemented by Row struct
@@ -383,11 +465,9 @@ impl Output {
         // self.dirty += 1;
     }
 
-    // DRAW LINES () #r
-    // Adds line numbers to the beginning of each line
     fn draw_lines(&mut self) {
-        let screen_lines = self.window_size.1;
-        let screen_columns = self.window_size.0;
+        let screen_lines = self.win_size.1;
+        let screen_columns = self.win_size.0;
         for r in 1..screen_lines + 1 {
             let mut i = r - 1;
             let mut istr = format!("{}", i);
@@ -432,17 +512,29 @@ impl Output {
             )
             .unwrap();
             // exception for last line in window:
-            if r < screen_lines {
-                self.editor_contents.push_str("\r\n");
-            }
+            // if r < screen_lines {
+            self.editor_contents.push_str("\r\n");
+            // }
         }
     }
 
-    // REFRESH SCREEN ()
+    fn draw_message_bar(&mut self) {
+        queue!(
+            self.editor_contents,
+            terminal::Clear(ClearType::UntilNewLine)
+        )
+        .unwrap();
+        if let Some(msg) = self.status_message.message() {
+            self.editor_contents
+                .push_str(&msg[..cmp::min(self.win_size.0, msg.len())]);
+        }
+    }
     fn refresh_screen(&mut self) -> crossterm::Result<()> {
         self.cursor_controller.scroll(&self.editor_rows);
         queue!(self.editor_contents, cursor::Hide, cursor::MoveTo(0, 0))?;
         self.draw_lines();
+        self.draw_status_bar();
+        self.draw_message_bar();
         let cursor_x = self.cursor_controller.render_x - self.cursor_controller.column_offset;
         let cursor_y = self.cursor_controller.cursor_y - self.cursor_controller.row_offset;
         queue!(
@@ -497,9 +589,9 @@ impl io::Write for EditorContents {
 }
 
 // Struct that reads keypresses:
-struct KeypressReader;
+struct Reader;
 // Method that reads key events:
-impl KeypressReader {
+impl Reader {
     fn read_key(&self) -> crossterm::Result<KeyEvent> {
         loop {
             if event::poll(Duration::from_millis(500))? {
@@ -513,18 +605,18 @@ impl KeypressReader {
 
 // Main stuct that runs program:
 struct RustextEditor {
-    reader: KeypressReader,
+    reader: Reader,
     output: Output,
 }
 impl RustextEditor {
     // new method creates new instance of RustextEditor
     fn new() -> Self {
         Self {
-            reader: KeypressReader,
+            reader: Reader,
             output: Output::new(),
         }
     }
-    // Processes the events returned by KeypressReader:
+    // Processes the events returned by Reader:
     fn process_keypress(&mut self) -> crossterm::Result<bool> {
         match self.reader.read_key()? {
             KeyEvent {
@@ -550,11 +642,11 @@ impl RustextEditor {
                         self.output.cursor_controller.row_offset
                 } else {
                     self.output.cursor_controller.cursor_y = cmp::min(
-                        self.output.window_size.1 + self.output.cursor_controller.row_offset - 1,
+                        self.output.win_size.1 + self.output.cursor_controller.row_offset - 1,
                         self.output.editor_rows.number_of_rows(),
                     );
                 }
-                (2..self.output.window_size.1).for_each(|_| {
+                (2..self.output.win_size.1).for_each(|_| {
                     self.output.move_cursor(if matches!(val, KeyCode::PageUp) {
                         KeyCode::Up
                     } else {
@@ -567,7 +659,28 @@ impl RustextEditor {
             KeyEvent {
                 code: KeyCode::Char('s'),
                 modifiers: KeyModifiers::CONTROL,
-            } => self.output.editor_rows.save()?,
+            } => {
+                if matches!(self.output.editor_rows.filename, None) {
+                    let prompt = prompt!(&mut self.output, "Save as : {} (ESC to cancel)")
+                        .map(|it| it.into());
+                    if let None = prompt {
+                        self.output
+                            .status_message
+                            .set_message("Save Aborted".into());
+                        return Ok(true);
+                    }
+                    self.output.editor_rows.filename = prompt
+                }
+                self.output.editor_rows.save().map(|len| {
+                    self.output
+                        .status_message
+                        .set_message(format!("{} bytes written to disk", len));
+                    // self.output.dirty = 0
+                })?;
+            }
+
+            // } => self.output.editor_rows.save()?,
+
             // maps "Backspace" and "Delete" keys to delete_char() function:
             KeyEvent {
                 code: key @ (KeyCode::Backspace | KeyCode::Delete),
