@@ -20,13 +20,11 @@ impl Drop for RawFix {
     }
 }
 
-// implements default method for Row struct
 #[derive(Default)]
 struct Row {
     row_content: String,
     render: String,
 }
-
 impl Row {
     fn new(row_content: String, render: String) -> Self {
         Self {
@@ -242,7 +240,6 @@ impl EditorRows {
     }
 }
 
-// CursorController: STORES POSITION OF CURSOR
 struct CursorController {
     cursor_x: usize,
     cursor_y: usize,
@@ -253,7 +250,6 @@ struct CursorController {
     column_offset: usize,
     render_x: usize,
 }
-// INITIALIZES CURSOR POSITION
 impl CursorController {
     fn new(win_size: (usize, usize)) -> CursorController {
         Self {
@@ -342,7 +338,7 @@ impl CursorController {
         self.cursor_x = cmp::min(self.cursor_x, row_len);
     }
 }
-// Struct for handling text output
+
 struct Output {
     win_size: (usize, usize),
     editor_contents: EditorContents,
@@ -546,8 +542,6 @@ impl Output {
     }
 }
 
-// STRUCT: EditorContents
-// Output is written to this struct instead of to stdout
 struct EditorContents {
     content: String,
 }
@@ -557,16 +551,13 @@ impl EditorContents {
             content: String::new(),
         }
     }
-    // POTENTIAL ERROR HERE
     fn push(&mut self, ch: char) {
         self.content.push(ch)
     }
-
     fn push_str(&mut self, string: &str) {
         self.content.push_str(string)
     }
 }
-// Implementation of std::io::Write for EditorContent:
 impl io::Write for EditorContents {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // convert the bytes passed into the write function to str so they can be added to the content
@@ -588,9 +579,7 @@ impl io::Write for EditorContents {
     }
 }
 
-// Struct that reads keypresses:
 struct Reader;
-// Method that reads key events:
 impl Reader {
     fn read_key(&self) -> crossterm::Result<KeyEvent> {
         loop {
@@ -603,7 +592,6 @@ impl Reader {
     }
 }
 
-// Main stuct that runs program:
 struct RustextEditor {
     reader: Reader,
     output: Output,
@@ -616,7 +604,7 @@ impl RustextEditor {
             output: Output::new(),
         }
     }
-    // Processes the events returned by Reader:
+
     fn process_keypress(&mut self) -> crossterm::Result<bool> {
         match self.reader.read_key()? {
             KeyEvent {
@@ -696,7 +684,6 @@ impl RustextEditor {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::NONE,
             } => self.output.insert_newline(),
-            // 1.
             KeyEvent {
                 code: code @ (KeyCode::Char(..) | KeyCode::Tab),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
@@ -709,7 +696,6 @@ impl RustextEditor {
         }
         Ok(true)
     }
-    // run function:
     fn run(&mut self) -> crossterm::Result<bool> {
         self.output.refresh_screen()?;
         self.process_keypress()
