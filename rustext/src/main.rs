@@ -7,9 +7,9 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use std::{cmp, env, fs, io};
 
-struct RawFix;
+struct Reset;
 
-impl Drop for RawFix {
+impl Drop for Reset {
     fn drop(&mut self) {
         terminal::disable_raw_mode().expect("Could not disable raw mode");
         Output::clear_screen().expect("Error");
@@ -674,7 +674,7 @@ impl Editor {
 }
 
 fn main() -> crossterm::Result<()> {
-    let _clean_up = RawFix;
+    let _clean_up = Reset;
     terminal::enable_raw_mode()?;
     let mut editor = Editor::new();
     while editor.run()? {}
