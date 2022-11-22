@@ -18,6 +18,7 @@ It allows you to:
   - type and enter: "cargo run" to open a new, unsaved file.\
     \
      OR
+    \
   - type and enter: "cargo run <filename.ext>" to open the existing file.
 
 ## Program Notes
