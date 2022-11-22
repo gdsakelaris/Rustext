@@ -15,7 +15,7 @@ It allows you to:
 
 - From the command-line, navigate to the "rustext" directory.
 
-  - type and enter: "cargo run" to open a new, unsaved file.
+  - type and enter: "cargo run" to open a new, unsaved file.\
     OR
   - type and enter: "cargo run <filename.ext>" to open the existing file.
 
