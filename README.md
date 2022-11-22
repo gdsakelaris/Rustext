@@ -11,18 +11,17 @@ It allows you to:
 - save changes to all files
 - manipulate the cursor with specific controls to easily navigate files
 
-## Run Rustext:
+## To run Rustext:
 
 - From the command-line, navigate to the "rustext" directory.
 
   - type and enter: "cargo run" to open a new, unsaved file.\
-    \
-     OR  
+     OR
   - type and enter: "cargo run <filename.ext>" to open the existing file.
 
 ## Program Notes
 
-- All unique controls are displayed at the bottom of the window when relevant.
+- ==All unique controls are displayed at the bottom of the window when relevant.==
 
 - Here are the controls with "standard" functionality:
 
