@@ -9,7 +9,6 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use std::{cmp, env, fs};
 
-const TAB_STOP: usize = 8;
 struct RawFix;
 impl Drop for RawFix {
     fn drop(&mut self) {
@@ -61,8 +60,6 @@ macro_rules! prompt {
         if input.is_empty() { None } else { Some (input) }
     }};
 }
-//
-
 #[derive(Default)]
 struct Row {
     row_content: String,
@@ -76,23 +73,23 @@ impl Row {
         }
     }
 
-    // Inserts a character into the line at a given position
     fn insert_char(&mut self, at: usize, ch: char) {
         self.row_content.insert(at, ch);
         EditorRows::render_row(self)
     }
 
-    // Deletes a character in row_content
     fn delete_char(&mut self, at: usize) {
         self.row_content.remove(at);
         EditorRows::render_row(self)
     }
 }
-
 struct StatusMessage {
     message: Option<String>,
     set_time: Option<Instant>,
 }
+
+//
+
 impl StatusMessage {
     fn new(initial_message: String) -> Self {
         Self {
@@ -134,9 +131,8 @@ impl EditorRows {
         }
     }
 
-    //
     fn from_file(file: PathBuf) -> Self {
-        let file_contents = fs::read_to_string(&file).expect("Unable to read file");
+        let file_contents = fs::read_to_string(&file).expect("Could not read file");
         Self {
             filename: Some(file),
             row_contents: file_contents
@@ -163,7 +159,7 @@ impl EditorRows {
     }
 
     fn get_row(&self, at: usize) -> &str {
-        &self.row_contents[at].render
+        &self.row_contents[at].row_content
     }
     // fn get_row(&self, at: usize) -> &Row {
     //     &self.row_contents[at]
@@ -585,12 +581,12 @@ impl Reader {
     }
 }
 
-struct RustextEditor {
+struct Editor {
     reader: Reader,
     output: Output,
 }
-impl RustextEditor {
-    // new method creates new instance of RustextEditor
+impl Editor {
+    // new method creates new instance of Editor
     fn new() -> Self {
         Self {
             reader: Reader,
@@ -698,7 +694,7 @@ impl RustextEditor {
 fn main() -> crossterm::Result<()> {
     let _raw_fix = RawFix;
     terminal::enable_raw_mode()?;
-    let mut editor = RustextEditor::new();
+    let mut editor = Editor::new();
     while editor.run()? {}
     Ok(())
 }
