@@ -1,3 +1,5 @@
+// "crossterm" crate/library contains several functions and interfaces that allow this program to interact with the computer's terminal [dependency added into "Cargo.toml" file]
+
 use crossterm::event::*;
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, event, execute, queue, style, terminal};
@@ -7,13 +9,12 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use std::{cmp, env, fs, io};
 
-struct Reset;
-
 struct Reader;
 
 impl Reader {
     fn read_key(&self) -> crossterm::Result<KeyEvent> {
         loop {
+            // [read] fn returns if it does not receive any input for 500 seconds
             if event::poll(Duration::from_millis(500))? {
                 if let Event::Key(event) = event::read()? {
                     return Ok(event);
@@ -35,15 +36,19 @@ impl Editor {
             output: Output::new(),
         }
     }
-
-    fn process_keypress(&mut self) -> crossterm::Result<bool> {
+    // ***
+    // receives user button presses and passes corresponding data along to [Output], etc.
+    fn button_handler(&mut self) -> crossterm::Result<bool> {
         match self.reader.read_key()? {
+        // *** Each KeyEvent corresponds to a button mapping
+            // CTRL-q: quit (exit) program:
             KeyEvent {
                 code: KeyCode::Char('q'),
                 modifiers: KeyModifiers::CONTROL,
             } => {
                 return Ok(false);
             }
+            // CTRL-a/d: go to beginning/end of current line:
             KeyEvent {
                 code:
                     direction
@@ -52,6 +57,7 @@ impl Editor {
                     | KeyCode::Char('d')),
                 modifiers: KeyModifiers::CONTROL,
             } => self.output.move_cursor(direction),
+            // Arrow Keys (Up/Down/Left/Right): move the cursor 1 position in arrow direction (Standard):
             KeyEvent {
                 code:
                     direction
@@ -63,6 +69,7 @@ impl Editor {
                 ),
                 modifiers: KeyModifiers::NONE,
             } => self.output.move_cursor(direction),
+            // CTRL-Up/Down: go to previous/next page of file: 
             KeyEvent {
                 code: val @ (KeyCode::Up | KeyCode::Down),
                 modifiers: KeyModifiers::CONTROL,
@@ -84,17 +91,21 @@ impl Editor {
                     });
                 })
             }
+            // CTRL-s: save file:
             KeyEvent {
                 code: KeyCode::Char('s'),
                 modifiers: KeyModifiers::CONTROL,
             } => {
+                // Check is the prompt is None:
                 if matches!(self.output.editor_rows.filename, None) {
-                    let prompt = prompt!(&mut self.output, "Save as : {} (Press ESC to cancel save)")
+                    // prompts the user for a file name before saving if [filename] is None:
+                    let prompt = prompt!(&mut self.output, "(Enter File Name : {}   | Press: ENTER to save / ESC to cancel save)")
                         .map(|it| it.into());
+                    // if prompt is None, display "File Save Aborted":
                     if let None = prompt {
                         self.output
                             .status_message
-                            .set_message("Cancelled File Save".into());
+                            .set_message("File Save Aborted".into());
                         return Ok(true);
                     }
                     self.output.editor_rows.filename = prompt
@@ -105,6 +116,7 @@ impl Editor {
                         .set_message(format!("{:?} File Saved", self.output.editor_rows.filename));
                 })?;
             }
+            // [Backspace] and [DELETE] keys: Standard functionality:
             KeyEvent {
                 code: key @ (KeyCode::Backspace | KeyCode::Delete),
                 modifiers: KeyModifiers::NONE,
@@ -114,12 +126,17 @@ impl Editor {
                 }
                 self.output.delete_char()
             }
+            // [ENTER]: Standard functionality:
             KeyEvent {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::NONE,
+            // maps Enter key to [insert_newline] function - defined in [Output] implementation
             } => self.output.insert_newline(),
+            // [TAB]: Standard functionality:
+            // any regular character (EX: a, b, c, 1, 2, 3, ., ,, !, @, etc.) is mapped as is: 
             KeyEvent {
                 code: code @ (KeyCode::Char(..) | KeyCode::Tab),
+                // [SHIFT] button can be used as modifier:
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
             } => self.output.insert_char(match code {
                 KeyCode::Tab => '\t',
@@ -133,7 +150,7 @@ impl Editor {
 
     fn run(&mut self) -> crossterm::Result<bool> {
         self.output.refresh_screen()?;
-        self.process_keypress()
+        self.button_handler()
     }
 }
 
@@ -172,7 +189,7 @@ impl Cursor {
             })
     }
 
-    fn scroll(&mut self, editor_rows: &EditorLines) {
+    fn scroll(&mut self, editor_rows: &EditorRows) {
         self.render_x = 0;
         if self.cursor_y < editor_rows.number_of_rows() {
             self.render_x = self.get_render_x(editor_rows.get_editor_row(self.cursor_y));
@@ -187,7 +204,7 @@ impl Cursor {
         }
     }
 
-    fn move_cursor(&mut self, direction: KeyCode, editor_rows: &EditorLines) {
+    fn move_cursor(&mut self, direction: KeyCode, editor_rows: &EditorRows) {
         let number_of_rows = editor_rows.number_of_rows();
 
         match direction {
@@ -236,15 +253,26 @@ impl Cursor {
     }
 }
 
+// Empty struct (see [Drop] implementation below)
+struct Reset;
+
+// See [main]
+// allows screen clearing on crashes, panics, etc:
+// [drop] fn is called: 
+    // when the instance of the [Reset] struct (interpreted as [_reset] variable within [main] fn) goes out of scope when [main] returns
+    // there is a [panic] while the instance is still in scope
 impl Drop for Reset {
     fn drop(&mut self) {
-        terminal::disable_raw_mode().expect("Could not disable raw mode");
+        terminal::disable_raw_mode().expect("Unable to disable raw mode");
         Output::clear_screen().expect("Error");
     }
 }
 
 #[derive(Default)]
+// ^ macro implements a [Default] method for [Line] struct
+    // the default value creates a new instance of [Line] with [row_content] and [render] being empty strings:
 struct Line {
+    // Strings = mutability:
     row_content: String,
     render: String,
 }
@@ -257,23 +285,30 @@ impl Line {
         }
     }
 
+    // inserts a single character into a line, at position specified by [at] argument:
     fn insert_char(&mut self, at: usize, ch: char) {
+        // [String::insert] inserts the new character:
         self.row_content.insert(at, ch);
-        EditorLines::render_row(self)
+        // [render_row] updates [render]
+        EditorRows::render_row(self)
     }
 
     fn delete_char(&mut self, at: usize) {
         self.row_content.remove(at);
-        EditorLines::render_row(self)
+        EditorRows::render_row(self)
     }
 }
 
-struct EditorLines {
+// ***
+// struct holding the contents of each row (line):
+struct EditorRows {
+    // Each line is represented as an element in [row_contents] variable
+    // stored as [Vec] because contents are mutable
     row_contents: Vec<Line>,
     filename: Option<PathBuf>,
 }
 
-impl EditorLines {
+impl EditorRows {
     fn new() -> Self {
         match env::args().nth(1) {
             None => Self {
@@ -299,6 +334,7 @@ impl EditorLines {
         }
     }
 
+    // returns the number of lines in the file:
     fn number_of_rows(&self) -> usize {
         self.row_contents.len()
     }
@@ -340,9 +376,10 @@ impl EditorLines {
         });
     }
 
+    // insert a row at the index specified by the [at] argument:
     fn insert_row(&mut self, at: usize, contents: String) {
         let mut new_row = Line::new(contents, String::new());
-        EditorLines::render_row(&mut new_row);
+        EditorRows::render_row(&mut new_row);
         self.row_contents.insert(at, new_row);
     }
 
@@ -411,50 +448,88 @@ impl io::Write for EditorContents {
     }
 }
 
+// ***
+// prompts user to enter a file name when saving a new file
+// uses [macros] to:
+    // accept "Save as: {}"
+    // fill "{}" with user input
 #[macro_export]
 macro_rules! prompt {
+    // [prompt!()] takes 2 arguments
+        // 1. an [Output] type expression
+        // 2. [args]
+            // is a [token tree]/[tt] type - enables macro to take format arguments
     ($output:expr,$($args:tt)*) => {{
+        // 1st argument restriction:
+            // only instances of Output can be passed into the macro 
         let output:&mut Output = $output;
+        // user input is stored in a String:
         let mut input = String::with_capacity(32);
+        // Infinite Loop:
+            // i. repeatedly sets help message
+            // ii. refreshes screen
+            // iii. waits for buttons to handle
         loop {
+            // i:
             output.status_message.set_message(format!($($args)*, input));
+            // ^ [*] operator means the tokens can repeat any amount of times
+            // ii:
             output.refresh_screen()?;
+            // iii:
             match Reader.read_key()? {
+                // if user presses Enter:
                 KeyEvent {
                     code:KeyCode::Enter,
                     modifiers:KeyModifiers::NONE
                 } => {
+                    // if input is not empty, the help message is cleared and the input is returned
                     if !input.is_empty() {
                         output.status_message.set_message(String::new());
                         break;
                     }
                 }
+                // allows user to press [ESC] to cancel input prompt:
                 KeyEvent {
                     code: KeyCode::Esc, ..
                 } => {
+                    // When the prompt is cancelled, we clear input and return None:
                     output.status_message.set_message(String::new());
                     input.clear();
                     break;
                 }
+                // allows user to press [backspace] and [DELETE] in the input prompt:
                 KeyEvent {
                     code: KeyCode::Backspace | KeyCode::Delete,
                     modifiers: KeyModifiers::NONE,
+                // ".pop()" used to remove the last character char of input
                 } => { input.pop(); }
+                // if a character [Char('<_>')] is input:
                 KeyEvent {
                     code: code @ (KeyCode::Char(..) | KeyCode::Tab),
                     modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 } => input.push(match code {
                         KeyCode::Tab => '\t',
+                        // append the input character to [input]:
                         KeyCode::Char(ch) => ch,
                         _ => unreachable!(),
                     }),
                 _=> {}
             }
         }
+        // return None if there was no input 
+        // or 
+        // return Some(input) is there was input
         if input.is_empty() { None } else { Some (input) }
     }};
 }
 
+// Help displays useful information at the bottom of the text editor:
+    // file name
+    // file length (in lines)
+    // current line
+    // control guide
+    // status updates
+    // etc.
 struct Help {
     message: Option<String>,
     set_time: Option<Instant>,
@@ -490,21 +565,23 @@ struct Output {
     win_size: (usize, usize),
     editor_contents: EditorContents,
     cursor_controller: Cursor,
-    editor_rows: EditorLines,
+    editor_rows: EditorRows,
     status_message: Help,
 }
 
 impl Output {
     fn new() -> Self {
         let win_size = terminal::size()
+            // decrement y (which represents screen_rows) so [draw_rows] fn does not attempt to draw a line of user input at the bottom of the screen:
+                // makes room for two additional lines at the bottom of the screen (for Help messages)
             .map(|(x, y)| (x as usize, y as usize - 2))
             .unwrap();
         Self {
             win_size,
             editor_contents: EditorContents::new(),
             cursor_controller: Cursor::new(win_size),
-            editor_rows: EditorLines::new(),
-            status_message: Help::new("Press: CTRL-[q:quit | s:save | a/d:go to beginning/end of line | Up/Down (arrows):page up/page down] || Standard: Enter | Shift | Backspace/Delete | Tab (8 spaces) | Arrow Keys".into()),
+            editor_rows: EditorRows::new(),
+            status_message: Help::new("HELP: CTRL - [q: Quit | s: Save | a/d: Go to Beginning/End of line | Up/Down (Arrows): Page Up/Page Down]".into()),
         }
     }
 
@@ -549,10 +626,14 @@ impl Output {
         }
     }
 
+    // mapped to Enter key in [button_handler] struct
     fn insert_newline(&mut self) {
+        // if at the beginning of a line: 
         if self.cursor_controller.cursor_x == 0 {
             self.editor_rows
+                // insert a new blank row before the line the cursor is currently on:
                 .insert_row(self.cursor_controller.cursor_y, String::new())
+        // if not at the beginning of a line, split the current line into two rows:
         } else {
             let current_row = self
                 .editor_rows
@@ -560,15 +641,22 @@ impl Output {
             let new_row_content = current_row.row_content[self.cursor_controller.cursor_x..].into();
             current_row
                 .row_content
+                // truncate the current line the cursor is on to a size equal to cursor_x:
                 .truncate(self.cursor_controller.cursor_x);
-            EditorLines::render_row(current_row);
+            // call [render_row] to update the contents of [render]
+            EditorRows::render_row(current_row);
+            // insert a new row with contents of the previous line from cursor_x and on:
             self.editor_rows
                 .insert_row(self.cursor_controller.cursor_y + 1, new_row_content);
         }
+        // after adding a new line: 
+        // set cursor_x as 0 (cursor moves to the start of the line): 
         self.cursor_controller.cursor_x = 0;
+        // increase cursor_y (cursor moves down one line):
         self.cursor_controller.cursor_y += 1;
     }
 
+    // insert a char at the cursor position
     fn insert_char(&mut self, ch: char) {
         if self.cursor_controller.cursor_y == self.editor_rows.number_of_rows() {
             self.editor_rows
@@ -617,7 +705,9 @@ impl Output {
         let screen_rows = self.win_size.1;
         let screen_columns = self.win_size.0;
         for i in 0..screen_rows {
-            let mut iLine = format!("{}", i+1);
+            // i_line var represents the line number of the editor (i+1):
+                // its type is manipulated with format!() in order to be pushed into the row/line
+            let mut i_line = format!("{}", i+1);
             let file_row = i + self.cursor_controller.row_offset;
             if file_row >= self.editor_rows.number_of_rows() {
                 if self.editor_rows.number_of_rows() == 0 && i == 0 {
@@ -627,13 +717,15 @@ impl Output {
                     }
                     let mut padding = (screen_columns - welcome.len()) / 2;
                     if padding != 0 {
+                        // line number added to beginning of line 1 only
                         self.editor_contents.push('1');
                         padding -= 1
                     }
                     (0..padding).for_each(|_| self.editor_contents.push(' '));
                     self.editor_contents.push_str(&welcome);
                 } else {
-                    self.editor_contents.push_str(&iLine);
+                    // line number added to beginning of all lines after line 1
+                    self.editor_contents.push_str(&i_line);
                 }
             } else {
                 let row = self.editor_rows.get_render(file_row);
@@ -647,6 +739,7 @@ impl Output {
                 terminal::Clear(ClearType::UntilNewLine)
             )
             .unwrap();
+            // prints a newline after the last row it draws, since [Help] struct is the final thing being drawn
             self.editor_contents.push_str("\r\n");
         }
     }
@@ -673,9 +766,12 @@ impl Output {
     }
 }
 
+// returns a [Result}:
 fn main() -> crossterm::Result<()> {
-    let _clean_up = Reset;
+    // create instance of the [Reset] struct:
+    let _reset = Reset;
     terminal::enable_raw_mode()?;
+    // ^ [?] operator unwraps valid values or returns erroneous values and passes them to the calling function
     let mut editor = Editor::new();
     while editor.run()? {}
     Ok(())
