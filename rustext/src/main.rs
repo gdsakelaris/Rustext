@@ -80,7 +80,7 @@ impl StatusMessage {
 
     fn message(&mut self) -> Option<&String> {
         self.set_time.and_then(|time| {
-            if time.elapsed() > Duration::from_secs(5) {
+            if time.elapsed() > Duration::from_secs(300) {
                 self.message = None;
                 self.set_time = None;
                 None
@@ -302,12 +302,12 @@ impl CursorController {
                     }
                 }
             }
-            KeyCode::End => {
+            KeyCode::Char('d') => {
                 if self.cursor_y < number_of_rows {
                     self.cursor_x = editor_rows.get_row(self.cursor_y).len();
                 }
             }
-            KeyCode::Home => self.cursor_x = 0,
+            KeyCode::Char('a') => self.cursor_x = 0,
             _ => unimplemented!(),
         }
         let row_len = if self.cursor_y < number_of_rows {
@@ -364,7 +364,6 @@ struct Output {
     cursor_controller: CursorController,
     editor_rows: EditorRows,
     status_message: StatusMessage,
-    dirty: u64,
 }
 
 impl Output {
@@ -377,8 +376,7 @@ impl Output {
             editor_contents: EditorContents::new(),
             cursor_controller: CursorController::new(win_size),
             editor_rows: EditorRows::new(),
-            status_message: StatusMessage::new("Ctrl-S = Save | Ctrl-Q = Quit ".into()),
-            dirty: 0,
+            status_message: StatusMessage::new("Press: CTRL-[q:quit | s:save | a/d:go to beginning/end of line | Up/Down (arrows):page up/page down] || Standard: Enter | Shift | Backspace/Delete | Tab (8 spaces) | Arrow Keys".into()),
         }
     }
 
@@ -421,7 +419,6 @@ impl Output {
                 .join_adjacent_rows(self.cursor_controller.cursor_y);
             self.cursor_controller.cursor_y -= 1;
         }
-        self.dirty += 1;
     }
 
     fn insert_newline(&mut self) {
@@ -442,34 +439,30 @@ impl Output {
         }
         self.cursor_controller.cursor_x = 0;
         self.cursor_controller.cursor_y += 1;
-        self.dirty += 1;
     }
 
     fn insert_char(&mut self, ch: char) {
         if self.cursor_controller.cursor_y == self.editor_rows.number_of_rows() {
             self.editor_rows
                 .insert_row(self.editor_rows.number_of_rows(), String::new());
-            self.dirty += 1;
         }
         self.editor_rows
             .get_editor_row_mut(self.cursor_controller.cursor_y)
             .insert_char(self.cursor_controller.cursor_x, ch);
         self.cursor_controller.cursor_x += 1;
-        self.dirty += 1;
     }
 
     fn draw_status_bar(&mut self) {
         self.editor_contents
             .push_str(&style::Attribute::Reverse.to_string());
         let info = format!(
-            "{} {} [{} lines]",
+            "{} [{} lines]",
             self.editor_rows
                 .filename
                 .as_ref()
                 .and_then(|path| path.file_name())
                 .and_then(|name| name.to_str())
                 .unwrap_or("File Not Saved"),
-            if self.dirty > 0 { "(Working)" } else { "" },
             self.editor_rows.number_of_rows()
         );
         let info_len = cmp::min(info.len(), self.win_size.0);
@@ -591,19 +584,26 @@ impl Editor {
                 code:
                     direction
                     @
+                    ( KeyCode::Char('a')
+                    | KeyCode::Char('d')),
+                modifiers: KeyModifiers::CONTROL,
+            } => self.output.move_cursor(direction),
+            KeyEvent {
+                code:
+                    direction
+                    @
                     (KeyCode::Up
                     | KeyCode::Down
                     | KeyCode::Left
                     | KeyCode::Right
-                    | KeyCode::Home
-                    | KeyCode::End),
+                ),
                 modifiers: KeyModifiers::NONE,
             } => self.output.move_cursor(direction),
             KeyEvent {
-                code: val @ (KeyCode::PageUp | KeyCode::PageDown),
-                modifiers: KeyModifiers::NONE,
+                code: val @ (KeyCode::Up | KeyCode::Down),
+                modifiers: KeyModifiers::CONTROL,
             } => {
-                if matches!(val, KeyCode::PageUp) {
+                if matches!(val, KeyCode::Up) {
                     self.output.cursor_controller.cursor_y =
                         self.output.cursor_controller.row_offset
                 } else {
@@ -613,7 +613,7 @@ impl Editor {
                     );
                 }
                 (0..self.output.win_size.1).for_each(|_| {
-                    self.output.move_cursor(if matches!(val, KeyCode::PageUp) {
+                    self.output.move_cursor(if matches!(val, KeyCode::Up) {
                         KeyCode::Up
                     } else {
                         KeyCode::Down
@@ -625,12 +625,12 @@ impl Editor {
                 modifiers: KeyModifiers::CONTROL,
             } => {
                 if matches!(self.output.editor_rows.filename, None) {
-                    let prompt = prompt!(&mut self.output, "Save as : {} (ESC to cancel)")
+                    let prompt = prompt!(&mut self.output, "Save as : {} (Press ESC to cancel save)")
                         .map(|it| it.into());
                     if let None = prompt {
                         self.output
                             .status_message
-                            .set_message("Save Aborted".into());
+                            .set_message("Cancelled File Save".into());
                         return Ok(true);
                     }
                     self.output.editor_rows.filename = prompt
@@ -639,7 +639,6 @@ impl Editor {
                     self.output
                         .status_message
                         .set_message(format!("{:?} File Saved", self.output.editor_rows.filename));
-                    self.output.dirty = 0
                 })?;
             }
             KeyEvent {
