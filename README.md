@@ -21,7 +21,7 @@ It allows you to:
 
 ## Program Notes
 
-- ==All unique controls are displayed at the bottom of the window when relevant.==
+==- All unique controls are displayed at the bottom of the window when relevant.==
 
 - Here are the controls with "standard" functionality:
 
