@@ -1,4 +1,4 @@
-Line 1
+this is a test
 
 
 
@@ -7,83 +7,3 @@ Line 1
 
 
 
-L10
-
-
-
-
-
-
-
-
-
-
-
-
-
-L24
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-L44 (Last line of page)
-
-
-
-
-
-
-
-
-
-
-L55
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-L88 (Last line of page)
-EOF (Why is line numbering showing up below -- starting ~ 44)

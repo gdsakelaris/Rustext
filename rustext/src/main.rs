@@ -1,4 +1,4 @@
-// "crossterm" crate/library contains several functions and interfaces that allow this program to interact with the computer's terminal [dependency added into "Cargo.toml" file]
+// [crossterm] library contains several functions and interfaces that allow this program to interact with the computer's terminal [dependency added into "Cargo.toml" file]
 
 use crossterm::event::*;
 use crossterm::terminal::ClearType;
@@ -110,7 +110,7 @@ impl Editor {
                     }
                     self.output.editor_rows.filename = prompt
                 }
-                self.output.editor_rows.save().map(|len| {
+                self.output.editor_rows.save().map(|_len| {
                     self.output
                         .status_message
                         .set_message(format!("{:?} File Saved", self.output.editor_rows.filename));
@@ -707,7 +707,7 @@ impl Output {
         for i in 0..screen_rows {
             // i_line var represents the line number of the editor (i+1):
                 // its type is manipulated with format!() in order to be pushed into the row/line
-            let mut i_line = format!("{}", i+1);
+            let i_line = format!("{}", i+1);
             let file_row = i + self.cursor_controller.row_offset;
             if file_row >= self.editor_rows.number_of_rows() {
                 if self.editor_rows.number_of_rows() == 0 && i == 0 {
